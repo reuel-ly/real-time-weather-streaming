@@ -17,18 +17,29 @@ from fastavro import writer, parse_schema
 import io
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
-from pymongo import MongoClient
-import certifi
+
+
 
 # Kafka libraries
 from kafka import KafkaProducer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
-MONGO_URI = "mongodb+srv://qrcmpornobe_db_user:reuel@groceryinventorysystem.gpheuwl.mongodb.net/?appName=GroceryInventorySystem"
 
 class StreamingDataProducer:
-   
-    def __init__(self, bootstrap_servers: str, topic: str, mongo_uri=MONGO_URI, mongo_db="weather_db", mongo_collection="weather"):
+    """
+    Enhanced Kafka producer with stateful synthetic data generation
+    This class handles Kafka connection, realistic data generation, and message sending
+    """
+    
+    def __init__(self, bootstrap_servers: str, topic: str):
+        """
+        Initialize Kafka producer configuration with stateful data generation
+        
+        Parameters:
+        - bootstrap_servers: Kafka broker addresses (e.g., "localhost:9092")
+        - topic: Kafka topic to produce messages to
+        """
+
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
         
@@ -44,25 +55,46 @@ class StreamingDataProducer:
             # 'linger_ms': 10,  # Optional: Wait for batch fill
         }
 
-        # MongoDB setup
-        if mongo_uri:
-            self.mongo_client = MongoClient(mongo_uri, tlsCAFile=certifi.where())
-            self.mongo_db = self.mongo_client[mongo_db]
-            self.mongo_collection = self.mongo_db[mongo_collection]
-            print(f"✅ Connected to MongoDB: {mongo_db}.{mongo_collection}")
-        else:
-            self.mongo_client = None
-            print("⚠️ MongoDB URI not provided. Data will not be saved to MongoDB.")
         
+        # NOTE: this is for synthetic data generation can ignore
+        #-------------------------------Synthetic Data-------------------------
+        # Stateful data generation attributes
+        self.sensor_states = {}  # Track state for each sensor
+        self.time_counter = 0    # Track time progression
+        self.base_time = datetime.utcnow()
+        
+        # Expanded sensor pool with metadata
+        self.sensors = [
+            {"id": "sensor_001", "location": "server_room_a", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_002", "location": "server_room_b", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_003", "location": "outdoor_north", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_004", "location": "lab_1", "type": "humidity", "unit": "percent"},
+            {"id": "sensor_005", "location": "lab_2", "type": "humidity", "unit": "percent"},
+            {"id": "sensor_006", "location": "control_room", "type": "pressure", "unit": "hPa"},
+            {"id": "sensor_007", "location": "factory_floor", "type": "pressure", "unit": "hPa"},
+            {"id": "sensor_008", "location": "warehouse", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_009", "location": "office_area", "type": "humidity", "unit": "percent"},
+            {"id": "sensor_010", "location": "basement", "type": "pressure", "unit": "hPa"},
+        ]
 
-        # this is openweather api key
-        self.API_KEY = "9d9366a626726561c5600957e43f9270"   
+        # Metric type configurations
+        self.metric_ranges = {
+            "temperature": {"min": -10, "max": 45, "daily_amplitude": 8, "trend_range": (-0.5, 0.5)},
+            "humidity": {"min": 20, "max": 95, "daily_amplitude": 15, "trend_range": (-0.2, 0.2)},
+            "pressure": {"min": 980, "max": 1040, "daily_amplitude": 5, "trend_range": (-0.1, 0.1)},
+        }
+        
+        #self.SYMBOL = "AAPL"            #this is for stock-data which is not in use currently
+        
+        #------------------------------------------------------------------------
 
-        # seconds between API calls
-        self.FETCH_INTERVAL = 60                  
 
-        # --- AVRO SCHEMA ---
-        self.WEATHER_SCHEMA = {
+
+        self.API_KEY = "9d9366a626726561c5600957e43f9270"   # this is openweather api key
+
+        self.FETCH_INTERVAL = 60                  # seconds between API calls
+                # --- AVRO SCHEMA ---
+        self.SENSOR_SCHEMA = {
             "type": "record",
             "name": "WeatherAPI",
             "namespace": "com.bigdata.streaming",
@@ -75,7 +107,7 @@ class StreamingDataProducer:
                 {"name": "unit", "type": "string"}
             ]
         }
-        self.parsed_schema = parse_schema(self.WEATHER_SCHEMA)
+        self.parsed_schema = parse_schema(self.SENSOR_SCHEMA)
         
         # Initialize Kafka producer
         try:
@@ -268,19 +300,8 @@ class StreamingDataProducer:
             print(f"Producer stopped. Total messages sent: {message_count}")
 
 #---------------------------------------------------------------------------------------
-    
-    
-    # Save data to MongoDB
-    def save_to_mongo(self, record: dict):
-            """Save a single record to MongoDB."""
-            if self.mongo_client:
-                try:
-                    self.mongo_collection.insert_one(record)
-                    print(f"💾 Saved to MongoDB: {record['timestamp']} - {record['value']}°C")
-                except Exception as e:
-                    print(f"⚠️ MongoDB insert error: {e}")
 
-    # Retrieves data from OpenWeatherMap API and sends to Kafka
+# Retrieves data from OpenWeatherMap API and sends to Kafka
     def send_weather_stream(self, city: str):
         # Continuously fetch and send live weather data to Kafka
         print(f"🌤 Streaming live weather data for {city} from OpenWeatherMap...")
@@ -317,9 +338,6 @@ class StreamingDataProducer:
                     print(f"✅ Sent weather data: {record['value']}°C at {record['timestamp']}")
                 else:
                     print("⚠️ Kafka producer not initialized, cannot send message")
-
-                # Save to MongoDB
-                self.save_to_mongo(record)
 
             except Exception as e:
                 print(f"⚠️ Error fetching or sending weather data: {e}")
@@ -434,6 +452,11 @@ def parse_arguments():
         default='synthetic',
         help='Data source mode: synthetic (default) or stock (Alpha Vantage live data)'
     )
+    
+    # STUDENT TODO: Add more arguments for your specific use case
+    # parser.add_argument('--sensor-count', type=int, default=5, help='Number of simulated sensors')
+    # parser.add_argument('--data-type', choices=['temperature', 'humidity', 'financial'], default='temperature')
+    
     return parser.parse_args()
 
 
@@ -449,7 +472,8 @@ def main():
     """
     
     print("=" * 60)
-    print("STREAMING DATA PRODUCER")
+    print("STREAMING DATA PRODUCER TEMPLATE")
+    print("STUDENT TODO: Implement all sections marked with 'STUDENT TODO'")
     print("=" * 60)
     
     # Parse command-line arguments
@@ -461,13 +485,13 @@ def main():
         topic=args.topic
     )
     
-    # Start producing stream based on mode
+    # ✅ Start producing stream based on mode
     try:
         if args.mode == 'weather':
-            # Run Weather API streaming mode
-            producer.send_weather_stream(city="Manila")
+            # 🔴 Run Alpha Vantage live producer
+            producer.send_weather_stream(city="London")
         else:
-            # Default synthetic data mode
+            # 🟢 Default synthetic data mode
             producer.produce_stream(
                 messages_per_second=args.rate,
                 duration=args.duration

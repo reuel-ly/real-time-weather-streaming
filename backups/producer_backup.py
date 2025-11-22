@@ -13,22 +13,28 @@ import json
 import time
 import random
 import math
-from fastavro import writer, parse_schema
-import io
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
-from pymongo import MongoClient
-import certifi
 
 # Kafka libraries
 from kafka import KafkaProducer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
-MONGO_URI = "mongodb+srv://qrcmpornobe_db_user:reuel@groceryinventorysystem.gpheuwl.mongodb.net/?appName=GroceryInventorySystem"
 
 class StreamingDataProducer:
-   
-    def __init__(self, bootstrap_servers: str, topic: str, mongo_uri=MONGO_URI, mongo_db="weather_db", mongo_collection="weather"):
+    """
+    Enhanced Kafka producer with stateful synthetic data generation
+    This class handles Kafka connection, realistic data generation, and message sending
+    """
+    
+    def __init__(self, bootstrap_servers: str, topic: str):
+        """
+        Initialize Kafka producer configuration with stateful data generation
+        
+        Parameters:
+        - bootstrap_servers: Kafka broker addresses (e.g., "localhost:9092")
+        - topic: Kafka topic to produce messages to
+        """
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
         
@@ -43,39 +49,32 @@ class StreamingDataProducer:
             # 'batch_size': 16384,  # Optional: Tune batch size
             # 'linger_ms': 10,  # Optional: Wait for batch fill
         }
-
-        # MongoDB setup
-        if mongo_uri:
-            self.mongo_client = MongoClient(mongo_uri, tlsCAFile=certifi.where())
-            self.mongo_db = self.mongo_client[mongo_db]
-            self.mongo_collection = self.mongo_db[mongo_collection]
-            print(f"✅ Connected to MongoDB: {mongo_db}.{mongo_collection}")
-        else:
-            self.mongo_client = None
-            print("⚠️ MongoDB URI not provided. Data will not be saved to MongoDB.")
         
-
-        # this is openweather api key
-        self.API_KEY = "9d9366a626726561c5600957e43f9270"   
-
-        # seconds between API calls
-        self.FETCH_INTERVAL = 60                  
-
-        # --- AVRO SCHEMA ---
-        self.WEATHER_SCHEMA = {
-            "type": "record",
-            "name": "WeatherAPI",
-            "namespace": "com.bigdata.streaming",
-            "fields": [
-                {"name": "timestamp", "type": "string"},
-                {"name": "value", "type": "double"},
-                {"name": "metric_type", "type": "string"},
-                {"name": "sensor_id", "type": "string"},
-                {"name": "location", "type": "string"},
-                {"name": "unit", "type": "string"}
-            ]
+        # Stateful data generation attributes
+        self.sensor_states = {}  # Track state for each sensor
+        self.time_counter = 0    # Track time progression
+        self.base_time = datetime.utcnow()
+        
+        # Expanded sensor pool with metadata
+        self.sensors = [
+            {"id": "sensor_001", "location": "server_room_a", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_002", "location": "server_room_b", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_003", "location": "outdoor_north", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_004", "location": "lab_1", "type": "humidity", "unit": "percent"},
+            {"id": "sensor_005", "location": "lab_2", "type": "humidity", "unit": "percent"},
+            {"id": "sensor_006", "location": "control_room", "type": "pressure", "unit": "hPa"},
+            {"id": "sensor_007", "location": "factory_floor", "type": "pressure", "unit": "hPa"},
+            {"id": "sensor_008", "location": "warehouse", "type": "temperature", "unit": "celsius"},
+            {"id": "sensor_009", "location": "office_area", "type": "humidity", "unit": "percent"},
+            {"id": "sensor_010", "location": "basement", "type": "pressure", "unit": "hPa"},
+        ]
+        
+        # Metric type configurations
+        self.metric_ranges = {
+            "temperature": {"min": -10, "max": 45, "daily_amplitude": 8, "trend_range": (-0.5, 0.5)},
+            "humidity": {"min": 20, "max": 95, "daily_amplitude": 15, "trend_range": (-0.2, 0.2)},
+            "pressure": {"min": 980, "max": 1040, "daily_amplitude": 5, "trend_range": (-0.1, 0.1)},
         }
-        self.parsed_schema = parse_schema(self.WEATHER_SCHEMA)
         
         # Initialize Kafka producer
         try:
@@ -88,12 +87,7 @@ class StreamingDataProducer:
             print(f"ERROR: Failed to initialize Kafka producer: {e}")
             self.producer = None
 
-
-#------------------NOTE: Functions that are for testing------------------------
-
-    # This is a function for testing only
     def generate_sample_data(self) -> Dict[str, Any]:
-    
         """
         Generate realistic streaming data with stateful patterns
         
@@ -170,7 +164,6 @@ class StreamingDataProducer:
         if random.random() < 0.01:  # 1% chance per message
             state["trend"] = random.uniform(config["trend_range"][0], config["trend_range"][1])
         
-        # NOTE: this is a fake data generator for testing only
         # Generate realistic data structure
         sample_data = {
             "timestamp": current_time.isoformat() + 'Z',
@@ -179,51 +172,72 @@ class StreamingDataProducer:
             "sensor_id": sensor_id,
             "location": sensor["location"],
             "unit": sensor["unit"],
-        }        
+        }
+        
         return sample_data
 
-
-        # --- CONFIGURATION ---
-    
-    # This function is not in use currently
-    def fetch_stock_price(self, symbol: str):
-        """Fetch the latest stock price from Alpha Vantage"""
-        url = "https://www.alphavantage.co/query"
-        params = {
-            "function": "TIME_SERIES_INTRADAY",
-            "symbol": symbol,
-            "interval": "1min",
-            "apikey": self.API_KEY
-        }
-        response = requests.get(url, params=params)
-        data = response.json()
+    def serialize_data(self, data: Dict[str, Any]) -> bytes:
+        """
+        STUDENT TODO: Implement data serialization
+        
+        Convert the data dictionary to bytes for Kafka transmission.
+        Common formats: JSON, Avro, Protocol Buffers
+        
+        For simplicity, we use JSON serialization in this template.
+        Consider using Avro for better schema evolution in production.
+        """
+        
+        # STUDENT TODO: Choose and implement your serialization method
         try:
-            latest_time = list(data["Time Series (1min)"].keys())[0]
-            price = float(data["Time Series (1min)"][latest_time]["1. open"])
-            return latest_time, price
+            # JSON serialization (simple but less efficient)
+            serialized_data = json.dumps(data).encode('utf-8')
+            
+            # STUDENT TODO: Consider using Avro for better performance and schema management
+            # from avro import schema, datafile, io
+            # serialized_data = avro_serializer.serialize(data)
+            
+            return serialized_data
         except Exception as e:
-            print("⚠️ Alpha Vantage fetch error:", e)
-            print("Response:", data)
-            return None, None
-
-    # This function is not in use currently
-    def generate_stock_data(self) -> Dict[str, Any]:
-        """Generate one Avro-compatible record from live Alpha Vantage data"""
-        timestamp, price = self.fetch_stock_price(self.SYMBOL)
-        if not timestamp or not price:
+            print(f"STUDENT TODO: Implement proper error handling for serialization: {e}")
             return None
 
-        record = {
-            "timestamp": timestamp,
-            "value": price,
-            "metric_type": "stock_price",
-            "sensor_id": self.SYMBOL,
-            "location": "AlphaVantage",
-            "unit": "USD",
-        }
-        return record
+    def send_message(self, data: Dict[str, Any]) -> bool:
+        """
+        Implement message sending to Kafka
+        
+        Parameters:
+        - data: Dictionary containing the message data
+        
+        Returns:
+        - bool: True if message was sent successfully, False otherwise
+        """
+        
+        # Check if producer is initialized
+        if not self.producer:
+            print("ERROR: Kafka producer not initialized")
+            return False
+        
+        # Serialize the data
+        serialized_data = self.serialize_data(data)
+        if not serialized_data:
+            print("ERROR: Serialization failed")
+            return False
+        
+        try:
+            # Send message to Kafka
+            future = self.producer.send(self.topic, value=serialized_data)
+            # Wait for send confirmation with timeout
+            result = future.get(timeout=10)
+            print(f"Message sent successfully - Topic: {self.topic}, Data: {data}")
+            return True
+            
+        except KafkaError as e:
+            print(f"Kafka send error: {e}")
+            return False
+        except Exception as e:
+            print(f"Unexpected error during send: {e}")
+            return False
 
-    # This is the loop for testing only
     def produce_stream(self, messages_per_second: float = 0.1, duration: int = None):
         """
         STUDENT TODO: Implement the main streaming loop
@@ -266,121 +280,6 @@ class StreamingDataProducer:
             # Implement proper cleanup
             self.close()
             print(f"Producer stopped. Total messages sent: {message_count}")
-
-#---------------------------------------------------------------------------------------
-    
-    
-    # Save data to MongoDB
-    def save_to_mongo(self, record: dict):
-            """Save a single record to MongoDB."""
-            if self.mongo_client:
-                try:
-                    self.mongo_collection.insert_one(record)
-                    print(f"💾 Saved to MongoDB: {record['timestamp']} - {record['value']}°C")
-                except Exception as e:
-                    print(f"⚠️ MongoDB insert error: {e}")
-
-    # Retrieves data from OpenWeatherMap API and sends to Kafka
-    def send_weather_stream(self, city: str):
-        # Continuously fetch and send live weather data to Kafka
-        print(f"🌤 Streaming live weather data for {city} from OpenWeatherMap...")
-        while True:
-            try:
-                url = "https://api.openweathermap.org/data/2.5/weather"
-                params = {
-                    "q": city,
-                    "appid": self.API_KEY,
-                    "units": "metric"
-                }
-                response = requests.get(url, params=params)
-                data = response.json()
-                
-                if "main" not in data:
-                    print("⚠️ No weather data fetched, retrying...")
-                    time.sleep(self.FETCH_INTERVAL)
-                    continue
-
-                record = {
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "value": data["main"]["temp"],        # Temperature in Celsius
-                    "metric_type": "temperature",
-                    "sensor_id": f"weather_{city.lower()}",
-                    "location": city,
-                    "unit": "C"
-                }
-
-                # Serialize and send to Kafka
-                bytes_writer = io.BytesIO()
-                writer(bytes_writer, self.parsed_schema, [record])
-                if self.producer:
-                    self.producer.send(self.topic, bytes_writer.getvalue())
-                    print(f"✅ Sent weather data: {record['value']}°C at {record['timestamp']}")
-                else:
-                    print("⚠️ Kafka producer not initialized, cannot send message")
-
-                # Save to MongoDB
-                self.save_to_mongo(record)
-
-            except Exception as e:
-                print(f"⚠️ Error fetching or sending weather data: {e}")
-
-            time.sleep(self.FETCH_INTERVAL)
-    
-    # Convert data to AVRO format
-    def serialize_data(self, data: Dict[str, Any]) -> bytes:
-        """
-        Serialize data to Avro format for Kafka.
-        """
-
-        try:
-            bytes_writer = io.BytesIO()
-            writer(bytes_writer, self.parsed_schema, [data])
-            return bytes_writer.getvalue()
-        except Exception as e:
-            print(f"Error serializing Avro data: {e}")
-            return None
-
-    def decode_avro_message(self, msg_value):
-        bytes_reader = io.BytesIO(msg_value)
-        for record in reader(bytes_reader, parsed_schema):
-            return record
-
-    def send_message(self, data: Dict[str, Any]) -> bool:
-        """
-        Implement message sending to Kafka
-        
-        Parameters:
-        - data: Dictionary containing the message data
-        
-        Returns:
-        - bool: True if message was sent successfully, False otherwise
-        """
-        
-        # Check if producer is initialized
-        if not self.producer:
-            print("ERROR: Kafka producer not initialized")
-            return False
-        
-        # Serialize the data
-        serialized_data = self.serialize_data(data)
-        if not serialized_data:
-            print("ERROR: Serialization failed")
-            return False
-        
-        try:
-            # Send message to Kafka
-            future = self.producer.send(self.topic, value=serialized_data)
-            # Wait for send confirmation with timeout
-            result = future.get(timeout=10)
-            print(f"Message sent successfully - Topic: {self.topic}, Data: {data}")
-            return True
-            
-        except KafkaError as e:
-            print(f"Kafka send error: {e}")
-            return False
-        except Exception as e:
-            print(f"Unexpected error during send: {e}")
-            return False
 
     def close(self):
         """Implement producer cleanup and resource release"""
@@ -427,13 +326,11 @@ def parse_arguments():
         default=None,
         help='Run duration in seconds (default: infinite)'
     )
-
-    parser.add_argument(
-        '--mode',
-        choices=['synthetic', 'weather'],
-        default='synthetic',
-        help='Data source mode: synthetic (default) or stock (Alpha Vantage live data)'
-    )
+    
+    # STUDENT TODO: Add more arguments for your specific use case
+    # parser.add_argument('--sensor-count', type=int, default=5, help='Number of simulated sensors')
+    # parser.add_argument('--data-type', choices=['temperature', 'humidity', 'financial'], default='temperature')
+    
     return parser.parse_args()
 
 
@@ -449,7 +346,8 @@ def main():
     """
     
     print("=" * 60)
-    print("STREAMING DATA PRODUCER")
+    print("STREAMING DATA PRODUCER TEMPLATE")
+    print("STUDENT TODO: Implement all sections marked with 'STUDENT TODO'")
     print("=" * 60)
     
     # Parse command-line arguments
@@ -461,19 +359,14 @@ def main():
         topic=args.topic
     )
     
-    # Start producing stream based on mode
+    # Start producing stream
     try:
-        if args.mode == 'weather':
-            # Run Weather API streaming mode
-            producer.send_weather_stream(city="Manila")
-        else:
-            # Default synthetic data mode
-            producer.produce_stream(
-                messages_per_second=args.rate,
-                duration=args.duration
-            )
+        producer.produce_stream(
+            messages_per_second=args.rate,
+            duration=args.duration
+        )
     except Exception as e:
-        print(f"Error in main execution: {e}")
+        print(f"STUDENT TODO: Handle main execution errors: {e}")
     finally:
         print("Producer execution completed")
 
