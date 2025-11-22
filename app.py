@@ -57,8 +57,8 @@ def get_spark():
         .appName("WeatherApp")
         .master("local[*]")
         .config(
-            "spark.jars.packages",
-            "org.mongodb.spark:mongo-spark-connector_2.12:10.2.0"
+            "spark.jars",
+            r"C:\mongo-spark-connector\mongo-spark-connector_2.12-10.4.0.jar"
         )
         .getOrCreate()
     )
@@ -501,6 +501,7 @@ def display_historical_view(config):
 
 def main():
     st.title("🌞 Real-Time Weather Data Streaming")
+
     # Initialize session state for refresh management
     if 'refresh_state' not in st.session_state:
         st.session_state.refresh_state = {
@@ -539,7 +540,7 @@ def main():
     # Display refresh status
     st.sidebar.markdown("---")
     st.sidebar.metric("Last Refresh", st.session_state.refresh_state['last_refresh'].strftime("%H:%M:%S"))
-    
+
     # Create tabs for different views
     tab1, tab2 = st.tabs(["📈 Real-time Streaming", "📊 Historical Data"])
     
