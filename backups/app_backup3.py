@@ -25,17 +25,8 @@ import certifi
 import pymongo
 import pandas as pd
 from datetime import datetime, timedelta
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp
-from pyspark.sql.functions import window, avg
-import os
-from dotenv import load_dotenv
 
-load_dotenv() 
-
-url = os.getenv("DATABASE_URL")
-
-MONGO_URI = url
+MONGO_URI = "mongodb+srv://qrcmpornobe_db_user:reuel@groceryinventorysystem.gpheuwl.mongodb.net/?appName=GroceryInventorySystem"
 # Initialize MongoDB client with caching only once to prevent dns srv timeouts
 @st.cache_resource
 def get_mongo_client():    
@@ -49,22 +40,6 @@ mongo_client = get_mongo_client()
 mongo_db = mongo_client[MONGO_DB]
 mongo_collection = mongo_db[MONGO_COLLECTION]
 
-# Initialize Pyspark session with caching only once
-@st.cache_resource
-def get_spark():
-    spark = (
-        SparkSession.builder
-        .appName("WeatherApp")
-        .master("local[*]")
-        .config(
-            "spark.jars.packages",
-            "org.mongodb.spark:mongo-spark-connector_2.12:10.2.0"
-        )
-        .getOrCreate()
-    )
-    return spark
-
-spark = get_spark()
 
 # Page configuration
 st.set_page_config(
@@ -116,7 +91,7 @@ def setup_sidebar():
     }
 
 # ──────────────────────────────────────────────
-# Sample Data Generation (for testing without Kafka)
+# 4️⃣ Sample Data Generation (for testing without Kafka)
 def generate_sample_data():
     now = datetime.now()
     times = [now - timedelta(seconds=i*10) for i in range(50)]
@@ -130,19 +105,6 @@ def generate_sample_data():
     })
     return data
 # ──────────────────────────────────────────────
-
-def load_spark_weather_df():
-    spark = get_spark()
-    
-    return (
-        spark.read
-        .format("mongodb")
-        .option("connection.uri", "mongodb://localhost:27017")
-        .option("database", "weather_db")
-        .option("collection", "weather_data")
-        .load()
-    )
-
 
 
 # Kafka Consumer using Avro
@@ -201,7 +163,22 @@ def consume_kafka_data(config):
     return df
 
 def query_historical_data(time_range, show_all, metric_type=None, mongo_collection=mongo_collection):
-
+    """
+    STUDENT TODO: Implement actual historical data query
+    
+    This function should:
+    1. Connect to HDFS/MongoDB
+    2. Query historical data based on time range and selected metrics
+    3. Return aggregated historical data
+    
+    Parameters:
+    - time_range: time period to query (e.g., "1h", "24h", "7d")
+    - metrics: list of metric types to include
+    
+    Expected return format:
+    pandas DataFrame with historical data
+    """
+ 
     # SHOW ALL DATA MODE
     if show_all == "Show All Data":
         results = list(mongo_collection.find({}))
@@ -214,18 +191,9 @@ def query_historical_data(time_range, show_all, metric_type=None, mongo_collecti
         df = df.drop(columns=["_id"], errors="ignore")
         return df
 
-    # SPARK QUERIES
-    spark_df = load_spark_weather_df()
-
     # Time range filter
     now = datetime.utcnow()
-    if time_range == "5m":
-        start_time = now - timedelta(minutes=5)
-    elif time_range == "15m":
-        start_time = now - timedelta(minutes=15)
-    elif time_range == "30m":
-        start_time = now - timedelta(minutes=30)
-    elif time_range == "1h":
+    if time_range == "1h":
         start_time = now - timedelta(hours=1)
     elif time_range == "24h":
         start_time = now - timedelta(days=1)
@@ -236,25 +204,34 @@ def query_historical_data(time_range, show_all, metric_type=None, mongo_collecti
     else:
         start_time = now - timedelta(days=365)
 
-    
-    spark_df = spark_df.withColumn("timestamp", to_timestamp("timestamp"))
-    spark_df = spark_df.filter(col("timestamp") >= start_time)
+    query = {"timestamp": {"$gte": start_time}}
 
     # Metric filter
     if metric_type:
-        spark_df = spark_df.filter(col("metric_type").isin(metric_type))
+        query["metric_type"] = {"$in": metric_type}
 
-    # Convert Spark - Pandas
-    pdf = spark_df.toPandas()
+    # Fetch from MongoDB
+    results = list(mongo_collection.find(query))
 
-     #Clean MongoDB object ID column if exists
-    if "_id" in pdf.columns:
-        pdf = pdf.drop(columns=["_id"], errors="ignore")
+    if not results:
+        return pd.DataFrame()
 
-    return pdf
+    df = pd.DataFrame(results)
+
+    # Convert timestamp
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    # Remove MongoDB internal ID
+    df = df.drop(columns=["_id"], errors="ignore")
+
+    return df
 
 
 def display_real_time_view(config, refresh_interval):
+    """
+    Page 1: Real-time Streaming View
+    STUDENT TODO: Implement real-time data visualization from Kafka
+    """
     st.header("📈 Real-time Streaming Dashboard")
     
     # Refresh status
@@ -288,6 +265,7 @@ def display_real_time_view(config, refresh_interval):
         st.subheader("📈 Real-time Trend")
         
         if not real_time_data.empty:
+            # STUDENT TODO: Customize this chart for your specific data
             fig = px.line(
                 real_time_data,
                 x='timestamp',
@@ -298,7 +276,7 @@ def display_real_time_view(config, refresh_interval):
             )
             fig.update_layout(
                 xaxis_title="Time",
-                yaxis_title="Temperature",
+                yaxis_title="Value",
                 hovermode='x unified'
             )
             st.plotly_chart(fig, width='stretch')
@@ -318,7 +296,17 @@ def display_real_time_view(config, refresh_interval):
 
 def display_historical_view(config):
     st.header("📊 Historical Data Analysis")
-       
+    
+    with st.expander("ℹ️ Implementation Guide"):
+        st.info("""
+        **STUDENT TODO:** This page should display historical data queried from HDFS or MongoDB.
+        Implement the following:
+        - Connection to your chosen storage system (HDFS/MongoDB)
+        - Interactive filters and selectors for data exploration
+        - Data aggregation and analysis capabilities
+        - Historical trend visualization
+        """)
+    
     # Interactive controls
     st.subheader("Data Filters")
     col1, col2, col3, col4 = st.columns(4)
@@ -330,74 +318,33 @@ def display_historical_view(config):
             help="Changes the query mode to show all data or apply filters"
         )
 
-    # If SHOW ALL DATA → hide the other filters and replace with disabled text
-    if show_all == "Show All Data":
-        with col2:
-            st.write("Time Range")
-            st.info("Disabled (Showing All Data)")
-        with col3:
-            st.write("Metric Type")
-            st.info("Disabled (Showing All Data)")
-        with col4:
-            st.write("Aggregation")
-            st.info("Disabled (Showing All Data)")
-
-        # Set default values so your query logic doesn't break
-        time_range = None
-        metric_type = None
-        aggregation = "raw"
-
-    else:
-        # Normal interactive controls (Enabled when Filtered View is selected)
-        with col2:
-            time_range = st.selectbox(
-                "Time Range",
-                ["5m","10m", "15m", "30m", "1h", "24h", "7d", "30d"],
-                help="Implement time-based filtering in your query"
-            )
-        
-        with col3:
-            metric_type = st.selectbox(
-                "Metric Type",
-                ["temperature", "humidity", "pressure", "all"],
-                help="Implement metric filtering in your query"
-            )
-        
-        with col4:
-            aggregation = st.selectbox(
-                "Aggregation",
-                ["raw", "hourly", "daily", "weekly"],
-                help="Implement data aggregation in your query"
-            )  
+    with col2:
+        time_range = st.selectbox(
+            "Time Range",
+            ["1h", "24h", "7d", "30d"],
+            help="Implement time-based filtering in your query"
+        )
+    
+    with col3:
+        metric_type = st.selectbox(
+            "Metric Type",
+            ["temperature", "humidity", "pressure", "all"],
+            help="Implement metric filtering in your query"
+        )
+    
+    with col4:
+        aggregation = st.selectbox(
+            "Aggregation",
+            ["raw", "hourly", "daily", "weekly"],
+            help="Implement data aggregation in your query"
+        )   
 
     historical_data = query_historical_data(time_range, show_all, [metric_type] if metric_type != "all" else None)
     
     if historical_data is not None:
-        if aggregation != "raw":
-            # Convert Pandas → Spark
-            spark_df = spark.createDataFrame(historical_data)
-            # Apply window aggregation
-            if aggregation == "hourly":
-                spark_df = spark_df.groupBy(window(col("timestamp"), "1 hour"), col("metric_type")) \
-                                .avg("value") \
-                                .withColumnRenamed("avg(value)", "avg_value")
-            elif aggregation == "daily":
-                spark_df = spark_df.groupBy(window(col("timestamp"), "1 day"), col("metric_type")) \
-                                .avg("value") \
-                                .withColumnRenamed("avg(value)", "avg_value")
-            elif aggregation == "weekly":
-                spark_df = spark_df.groupBy(window(col("timestamp"), "7 days"), col("metric_type")) \
-                                .avg("value") \
-                                .withColumnRenamed("avg(value)", "avg_value")
-            # Convert Spark → Pandas
-            pdf = spark_df.toPandas()
-        else:
-            pdf = historical_data
-
-        
-
         # Display raw data
         st.subheader("Historical Data Table")
+        st.info("STUDENT TODO: Customize data display for your specific dataset")
         
         st.dataframe(
             historical_data,
@@ -407,100 +354,46 @@ def display_historical_view(config):
         
         # Historical trends
         st.subheader("Historical Trends")
-        if aggregation == "raw":
-            fig = px.line(pdf, x="timestamp", y="value", color="metric_type",
-                        title="Historical Values")
-        else:
-            fig = px.line(pdf, x="window.start", y="avg_value", color="metric_type",
-                        title=f"{aggregation.capitalize()} Averaged Values")
-
-        st.plotly_chart(fig, use_container_width=True)
-            
         
-        st.header("📊 Top-N Temperature (℃) Visualizer")
-
-        if "value" in pdf.columns and "timestamp" in pdf.columns:
-
-            # --- User Inputs ---
-            metric_types = pdf["metric_type"].unique() if "metric_type" in pdf.columns else ["temperature"]
-
-            metric_col, top_n_col, order_col = st.columns(3)
-
-            with metric_col:
-                metric_filter = st.selectbox("Select Metric Type", metric_types)
-
-            with top_n_col:
-                top_n = st.number_input(
-                    "Select Top N",
-                    min_value=1,
-                    max_value=100,
-                    value=5,
-                    step=1
-                )
-
-            with order_col:
-                order_type = st.selectbox("Order By", ["Highest", "Lowest"])
-
-            # --- Filter by selected metric ---
-            filtered_df = (
-                pdf[pdf["metric_type"] == metric_filter]
-                if "metric_type" in pdf.columns
-                else pdf
+        if not historical_data.empty:
+            fig = px.line(
+                historical_data,
+                x='timestamp',
+                y='Temperature',
+                title="Weather Trend in Manila, Philippines",
+                labels={'value': 'Temperature', 'timestamp': 'Time'},
             )
-
-            if filtered_df.empty:
-                st.warning(f"No data available for metric type: {metric_filter}")
-            else:
-                # --- Sort values ---
-                if order_type == "Highest":
-                    top_rows = filtered_df.nlargest(top_n, "value")
-                else:
-                    top_rows = filtered_df.nsmallest(top_n, "value")
-                
-                st.write(f"### Top {top_n} {order_type} {metric_filter} values")
-
-                # --- Histogram  ---
-                fig_topN = px.bar(
-                    top_rows.sort_values("value", ascending=(order_type == "Lowest")),
-                    x="timestamp",
-                    y="value",
-                    title=f"Top {top_n} {order_type} {metric_filter.capitalize()} Readings",
-                    labels={"timestamp": "Timestamp", "value": metric_filter.capitalize()},
-                    template="plotly_white"
-                )
-                
-
-                fig_topN.update_layout(
-                    xaxis_title="Timestamp",
-                    yaxis_title=f"{metric_filter.capitalize()} Value",
-                    showlegend=False
-                )
-
-                st.plotly_chart(fig_topN, use_container_width=True)
-
-                # --- Show Table ---
-                with st.expander("📋 View Records"):
-                    st.dataframe(top_rows[["timestamp", "value"]])
-        else:
-            st.warning("Required columns ('value', 'timestamp') not found in dataset.")
-
-        # Additional analysis
-        st.subheader("Data Summary")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Records", len(pdf))
-            st.metric("Date Range",
-                    f"{pdf['timestamp'].min().strftime('%Y-%m-%d')} to {pdf['timestamp'].max().strftime('%Y-%m-%d')}"
-                    if "timestamp" in pdf.columns else "N/A")
-        with col2:
-            st.metric("Average Value", f"{pdf['value'].mean():.2f} ℃" if "value" in pdf.columns else "N/A")
-            st.metric("Data Variability", f"{pdf['value'].std():.2f}" if "value" in pdf.columns else "N/A")
-
+            st.plotly_chart(fig, width='stretch')
+            
+            # Additional analysis
+            st.subheader("Data Summary")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Total Records", len(historical_data))
+                st.metric("Date Range", f"{historical_data['timestamp'].min().strftime('%Y-%m-%d')} to {historical_data['timestamp'].max().strftime('%Y-%m-%d')}")
+            
+            with col2:
+                st.metric("Average Temperature", f"{historical_data['value'].mean():.2f}")
+                st.metric("Data Variability", f"{historical_data['value'].std():.2f}")
+    
     else:
         st.error("Historical data query not implemented")
 
 def main():
-    st.title("🌞 Real-Time Weather Data Streaming")
+    st.title("🚀 Streaming Weather Data")
+    
+    with st.expander("📋 Project Instructions"):
+        st.markdown("""
+        **STUDENT PROJECT TEMPLATE**
+        
+        ### Implementation Required:
+        - **Real-time Data**: Connect to Kafka and process streaming data👍
+        - **Historical Data**: Query from HDFS/MongoDB👍
+        - **Visualizations**: Create meaningful charts
+        - **Error Handling**: Implement robust error handling👍
+        """)
+    
     # Initialize session state for refresh management
     if 'refresh_state' not in st.session_state:
         st.session_state.refresh_state = {

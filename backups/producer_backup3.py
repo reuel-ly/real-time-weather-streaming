@@ -23,15 +23,8 @@ import certifi
 # Kafka libraries
 from kafka import KafkaProducer
 from kafka.errors import KafkaError, NoBrokersAvailable
-import os
-from dotenv import load_dotenv
 
-load_dotenv() 
-
-key = os.getenv("API_KEY")
-url = os.getenv("DATABASE_URL")
-
-MONGO_URI = url
+MONGO_URI = "mongodb+srv://qrcmpornobe_db_user:reuel@groceryinventorysystem.gpheuwl.mongodb.net/?appName=GroceryInventorySystem"
 
 class StreamingDataProducer:
    
@@ -63,7 +56,7 @@ class StreamingDataProducer:
         
 
         # this is openweather api key
-        self.API_KEY = key   
+        self.API_KEY = "9d9366a626726561c5600957e43f9270"   
 
         # seconds between API calls
         self.FETCH_INTERVAL = 60                  
