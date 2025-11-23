@@ -1,83 +1,72 @@
-# 🚀 Streaming Data Dashboard: Project Guide
+Setup Instructions
+1. Setup Requirements
+🔹 Install Kafka with Docker Desktop
 
-This project requires building a big data streaming dashboard using **Kafka** and **Streamlit**, featuring separate real-time and historical data views.
+This project uses the Wurstmeister Kafka image.
 
-## 🎯 Architecture & Components
+Follow this YouTube tutorial for installation and setup:
+➡️ https://www.youtube.com/watch?v=EiMi11slVnY
 
-A **dual-pipeline** architecture separates live streaming from long-term storage and analysis.
+🔹 Install Java 17 (Required for Kafka & Spark)
 
-| Pipeline | Flow | Output |
-| :--- | :--- | :--- |
-| **Real-time** | Kafka $\rightarrow$ Streamlit (Live Consumer) | `📈 Real-time Streaming View` |
-| **Historical** | Kafka $\rightarrow$ **HDFS OR MongoDB** $\rightarrow$ Streamlit (Query) | `📊 Historical Data View` |
+Install Java 17 on Windows using the guide below:
+➡️ https://www.youtube.com/watch?v=ykAhL1IoQUM
 
-### Mandatory Components
-* Kafka Producer/Consumer.
-* **HDFS or MongoDB** integration.
-* Two-page Streamlit dashboard with charts.
-* Robust error handling.
+2. Getting the Source Code & Environment Ready
+📥 Clone or Download the Repository
 
----
+Clone using Git Bash:
 
-## 💻 Technical Implementation Tasks
+git clone https://github.com/reuel-ly/real-time-weather-streaming.git
 
-### 1. Data Producer (`producer.py`)
-Create a Kafka Producer that fetches real data from an **existing Application Programming Interface (API)** (e.g., a public weather API, stock market API, etc.).
 
-**Required Data Schema Fields:**
-* `timestamp` (ISO format)
-* `value` (Numeric)
-* `metric_type` (String)
-* `sensor_id` (String)
+Or download directly from GitHub:
+➡️ https://github.com/reuel-ly/real-time-weather-streaming
 
-### 2. Dashboard (`app.py`)
-Implement the Streamlit logic:
-* `consume_kafka_data()`: Real-time processing.
-* `query_historical_data()`: Data retrieval from storage.
-* Create interactive widgets (filters, time-range selector) for the Historical View.
+📦 Create a Conda Environment
 
-### 3. Storage Integration
-Implement data writing and querying for **ONE** of the following: **HDFS** or **MongoDB**.
+Using Anaconda Prompt or PowerShell:
 
----
+conda create -n bigdata python=3.10.13
+conda activate bigdata
 
-## 🏃‍♂️ Setup & Execution
+📚 Install Required Python Packages
 
-### Prerequisites
-Python 3.8+, Apache Kafka, HDFS **OR** MongoDB.
+Navigate to the project folder, then install dependencies:
 
-### Setup
-1. **Setup environment**
-    - Download miniconda
-    - Create your python environment
-    ```bash
-    conda create -n bigdata python=3.10.13
-    ```
-2.  **Clone Repo & Install:**
-    ```bash
-    git clone [REPO_URL]
-    conda activate bigdata
-    pip install -r requirements.txt
-    ```
-3.  **Configure:** Set up Kafka and your chosen Storage System.
-4.  **Optional Environment File (`.env`):** Use for connection details.
+pip install -r requirements.txt
 
-### Execution
-1.  **Start Kafka Broker** (and Controller).
-2.  **Start Producer:**
-    ```bash
-    python producer.py
-    ```
-3.  **Launch Dashboard:**
-    ```bash
-    streamlit run app.py
-    ```
+🔐 Create a .env File
 
----
+Inside the project directory, create a file named .env.
 
-## 📦 Deliverables
-Submit the following files:
-* `app.py`
-* `producer.py`
-* `requirements.txt`
-* `README.md`
+This file stores your MongoDB connection URL and OpenWeatherMap API key.
+
+Example .env:
+
+# This file holds sensitive data. DO NOT commit this to Git!
+
+API_KEY="1234567890"
+DATABASE_URL="mongodb+srv://db_user:dbpassword@groceryinventorysystem.gpheuwl.mongodb.net/?appName=GroceryInventorySystem"
+
+3. Running the Program
+▶️ Run the Kafka Producer (producer.py)
+
+Open Anaconda Prompt → activate the environment → go to the project directory → run:
+
+python producer.py --mode weather
+
+📊 Run the Streamlit Dashboard (app.py)
+
+In a separate terminal:
+
+streamlit run app.py
+
+⚠️ Important: Clear Streamlit Cache When Re-running
+
+If rerunning the project or encountering MongoDB/PySpark cache issues, run:
+
+streamlit cache clear
+
+
+This ensures the MongoDB and PySpark clients are properly refreshed.
