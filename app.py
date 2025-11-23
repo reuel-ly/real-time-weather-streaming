@@ -254,67 +254,80 @@ def query_historical_data(time_range, show_all, metric_type=None, mongo_collecti
     return pdf
 
 
+
+
 def display_real_time_view(config, refresh_interval):
     st.header("📈 Real-time Streaming Dashboard")
+
+    # Initialize session state for refresh and data
+    if 'refresh_state' not in st.session_state:
+        st.session_state.refresh_state = {'auto_refresh': True, 'last_refresh': datetime.now()}
     
-    # Refresh status
+    if 'real_time_data' not in st.session_state:
+        st.session_state.real_time_data = pd.DataFrame()  # empty dataframe to store cumulative data
+
     refresh_state = st.session_state.refresh_state
+
     st.info(f"**Auto-refresh:** {'🟢 Enabled' if refresh_state['auto_refresh'] else '🔴 Disabled'} - Updates every {refresh_interval} seconds")
-    
-    # Loading indicator for data consumption
+
+    # Fetch new Kafka data
     with st.spinner("Fetching real-time data from Kafka..."):
-        real_time_data = consume_kafka_data(config)
-    
-    if real_time_data is not None:
+        new_data = consume_kafka_data(config)  # your existing Kafka consumption function
+
+    if new_data is not None and not new_data.empty:
+        # Append new data to session-state dataframe
+        st.session_state.real_time_data = pd.concat(
+            [st.session_state.real_time_data, new_data]
+        ).drop_duplicates().reset_index(drop=True)
+
+        # Update last refresh time
+        refresh_state['last_refresh'] = datetime.now()
+
+    real_time_data = st.session_state.real_time_data
+
+    if not real_time_data.empty:
         # Data freshness indicator
         data_freshness = datetime.now() - refresh_state['last_refresh']
         freshness_color = "🟢" if data_freshness.total_seconds() < 10 else "🟡" if data_freshness.total_seconds() < 30 else "🔴"
-        
         st.success(f"{freshness_color} Data updated {data_freshness.total_seconds():.0f} seconds ago")
-        
-        # Real-time data metrics
+
+        # Live metrics
         st.subheader("📊 Live Data Metrics")
-        if not real_time_data.empty:
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Records Received", len(real_time_data))
-            with col2:
-                st.metric("Latest Value", f"{real_time_data['value'].iloc[-1]:.2f}")
-            with col3:
-                st.metric("Data Range", f"{real_time_data['timestamp'].min().strftime('%H:%M')} - {real_time_data['timestamp'].max().strftime('%H:%M')}")
-        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Records Received", len(real_time_data))
+        with col2:
+            st.metric("Latest Value", f"{real_time_data['value'].iloc[-1]:.2f}")
+        with col3:
+            st.metric("Data Range", f"{real_time_data['timestamp'].min().strftime('%H:%M')} - {real_time_data['timestamp'].max().strftime('%H:%M')}")
+
         # Real-time chart
         st.subheader("📈 Real-time Trend")
-        
-        if not real_time_data.empty:
-            fig = px.line(
-                real_time_data,
-                x='timestamp',
-                y='value',
-                title=f"Real-time Data Stream (Last {len(real_time_data)} records)",
-                labels={'value': 'Temperature', 'timestamp': 'Time'},
-                template='plotly_white'
+        fig = px.line(
+            real_time_data,
+            x='timestamp',
+            y='value',
+            title=f"Real-time Data Stream (Last {len(real_time_data)} records)",
+            labels={'value': 'Temperature', 'timestamp': 'Time'},
+            template='plotly_white'
+        )
+        fig.update_layout(
+            xaxis_title="Time",
+            yaxis_title="Temperature",
+            hovermode='x unified'
+        )
+        st.plotly_chart(fig, width='stretch')
+
+        # Raw data table
+        with st.expander("📋 View Raw Data"):
+            st.dataframe(
+                real_time_data.sort_values('timestamp', ascending=False),
+                width='stretch',
+                height=300
             )
-            fig.update_layout(
-                xaxis_title="Time",
-                yaxis_title="Temperature",
-                hovermode='x unified'
-            )
-            st.plotly_chart(fig, width='stretch')
-            
-            # Raw data table with auto-refresh
-            with st.expander("📋 View Raw Data"):
-                st.dataframe(
-                    real_time_data.sort_values('timestamp', ascending=False),
-                    width='stretch',
-                    height=300
-                )
-        else:
-            st.warning("No real-time data available.")
-    
     else:
-        st.error("Kafka data consumption not implemented")
+        st.warning("No real-time data available.")
+
 
 def display_historical_view(config):
     st.header("📊 Historical Data Analysis")

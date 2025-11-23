@@ -66,7 +66,7 @@ class StreamingDataProducer:
         self.API_KEY = key   
 
         # seconds between API calls
-        self.FETCH_INTERVAL = 60                  
+        self.FETCH_INTERVAL = 30                  
 
         # --- AVRO SCHEMA ---
         self.WEATHER_SCHEMA = {
